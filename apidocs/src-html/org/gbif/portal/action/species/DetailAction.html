@@ -1,0 +1,379 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="en">
+<head>
+<title>Source code</title>
+<link rel="stylesheet" type="text/css" href="../../../../../../stylesheet.css" title="Style">
+</head>
+<body>
+<div class="sourceContainer">
+<pre><span class="sourceLineNo">001</span>package org.gbif.portal.action.species;<a name="line.1"></a>
+<span class="sourceLineNo">002</span><a name="line.2"></a>
+<span class="sourceLineNo">003</span>import org.gbif.api.model.checklistbank.Description;<a name="line.3"></a>
+<span class="sourceLineNo">004</span>import org.gbif.api.model.checklistbank.NameUsage;<a name="line.4"></a>
+<span class="sourceLineNo">005</span>import org.gbif.api.model.checklistbank.NameUsageComponent;<a name="line.5"></a>
+<span class="sourceLineNo">006</span>import org.gbif.api.model.checklistbank.Reference;<a name="line.6"></a>
+<span class="sourceLineNo">007</span>import org.gbif.api.model.checklistbank.VernacularName;<a name="line.7"></a>
+<span class="sourceLineNo">008</span>import org.gbif.api.model.common.paging.Pageable;<a name="line.8"></a>
+<span class="sourceLineNo">009</span>import org.gbif.api.model.common.paging.PagingRequest;<a name="line.9"></a>
+<span class="sourceLineNo">010</span>import org.gbif.api.service.checklistbank.DescriptionService;<a name="line.10"></a>
+<span class="sourceLineNo">011</span>import org.gbif.api.service.checklistbank.DistributionService;<a name="line.11"></a>
+<span class="sourceLineNo">012</span>import org.gbif.api.service.checklistbank.ImageService;<a name="line.12"></a>
+<span class="sourceLineNo">013</span>import org.gbif.api.service.checklistbank.ReferenceService;<a name="line.13"></a>
+<span class="sourceLineNo">014</span>import org.gbif.api.service.checklistbank.SpeciesProfileService;<a name="line.14"></a>
+<span class="sourceLineNo">015</span>import org.gbif.api.service.checklistbank.TypeSpecimenService;<a name="line.15"></a>
+<span class="sourceLineNo">016</span>import org.gbif.api.service.checklistbank.VernacularNameService;<a name="line.16"></a>
+<span class="sourceLineNo">017</span>import org.gbif.api.service.occurrence.OccurrenceDatasetIndexService;<a name="line.17"></a>
+<span class="sourceLineNo">018</span>import org.gbif.api.vocabulary.Language;<a name="line.18"></a>
+<span class="sourceLineNo">019</span>import org.gbif.api.vocabulary.Origin;<a name="line.19"></a>
+<span class="sourceLineNo">020</span>import org.gbif.api.vocabulary.Rank;<a name="line.20"></a>
+<span class="sourceLineNo">021</span>import org.gbif.portal.model.VernacularLocaleComparator;<a name="line.21"></a>
+<span class="sourceLineNo">022</span><a name="line.22"></a>
+<span class="sourceLineNo">023</span>import java.util.LinkedHashMap;<a name="line.23"></a>
+<span class="sourceLineNo">024</span>import java.util.List;<a name="line.24"></a>
+<span class="sourceLineNo">025</span>import java.util.Map;<a name="line.25"></a>
+<span class="sourceLineNo">026</span>import java.util.Set;<a name="line.26"></a>
+<span class="sourceLineNo">027</span>import java.util.SortedMap;<a name="line.27"></a>
+<span class="sourceLineNo">028</span>import java.util.UUID;<a name="line.28"></a>
+<span class="sourceLineNo">029</span>import javax.annotation.Nullable;<a name="line.29"></a>
+<span class="sourceLineNo">030</span>import javax.validation.constraints.NotNull;<a name="line.30"></a>
+<span class="sourceLineNo">031</span><a name="line.31"></a>
+<span class="sourceLineNo">032</span>import com.google.common.annotations.VisibleForTesting;<a name="line.32"></a>
+<span class="sourceLineNo">033</span>import com.google.common.base.Function;<a name="line.33"></a>
+<span class="sourceLineNo">034</span>import com.google.common.base.Joiner;<a name="line.34"></a>
+<span class="sourceLineNo">035</span>import com.google.common.base.Predicate;<a name="line.35"></a>
+<span class="sourceLineNo">036</span>import com.google.common.base.Strings;<a name="line.36"></a>
+<span class="sourceLineNo">037</span>import com.google.common.collect.FluentIterable;<a name="line.37"></a>
+<span class="sourceLineNo">038</span>import com.google.common.collect.Lists;<a name="line.38"></a>
+<span class="sourceLineNo">039</span>import com.google.common.collect.Maps;<a name="line.39"></a>
+<span class="sourceLineNo">040</span>import com.google.common.collect.Ordering;<a name="line.40"></a>
+<span class="sourceLineNo">041</span>import com.google.common.collect.Sets;<a name="line.41"></a>
+<span class="sourceLineNo">042</span>import com.google.inject.Inject;<a name="line.42"></a>
+<span class="sourceLineNo">043</span><a name="line.43"></a>
+<span class="sourceLineNo">044</span>/**<a name="line.44"></a>
+<span class="sourceLineNo">045</span> * Populates the models for the detail page of any taxon.<a name="line.45"></a>
+<span class="sourceLineNo">046</span> * This is done sequentially, on the assumption that the content is well suited to page level caching.<a name="line.46"></a>
+<span class="sourceLineNo">047</span> */<a name="line.47"></a>
+<span class="sourceLineNo">048</span>public class DetailAction extends UsageBaseAction {<a name="line.48"></a>
+<span class="sourceLineNo">049</span><a name="line.49"></a>
+<span class="sourceLineNo">050</span>  private static final long serialVersionUID = -737170459644474553L;<a name="line.50"></a>
+<span class="sourceLineNo">051</span><a name="line.51"></a>
+<span class="sourceLineNo">052</span>  // only some species have a differing original name (a basionym)<a name="line.52"></a>
+<span class="sourceLineNo">053</span>  @Nullable<a name="line.53"></a>
+<span class="sourceLineNo">054</span>  private NameUsage basionym;<a name="line.54"></a>
+<span class="sourceLineNo">055</span><a name="line.55"></a>
+<span class="sourceLineNo">056</span>  private boolean verbatimExists = false;<a name="line.56"></a>
+<span class="sourceLineNo">057</span><a name="line.57"></a>
+<span class="sourceLineNo">058</span>  @Inject<a name="line.58"></a>
+<span class="sourceLineNo">059</span>  private DescriptionService descriptionService;<a name="line.59"></a>
+<span class="sourceLineNo">060</span>  @Inject<a name="line.60"></a>
+<span class="sourceLineNo">061</span>  private DistributionService distributionService;<a name="line.61"></a>
+<span class="sourceLineNo">062</span>  @Inject<a name="line.62"></a>
+<span class="sourceLineNo">063</span>  private ImageService imageService;<a name="line.63"></a>
+<span class="sourceLineNo">064</span>  @Inject<a name="line.64"></a>
+<span class="sourceLineNo">065</span>  private OccurrenceDatasetIndexService occurrenceDatasetService;<a name="line.65"></a>
+<span class="sourceLineNo">066</span>  @Inject<a name="line.66"></a>
+<span class="sourceLineNo">067</span>  private SpeciesProfileService speciesProfileService;<a name="line.67"></a>
+<span class="sourceLineNo">068</span>  @Inject<a name="line.68"></a>
+<span class="sourceLineNo">069</span>  private TypeSpecimenService typeSpecimenService;<a name="line.69"></a>
+<span class="sourceLineNo">070</span>  @Inject<a name="line.70"></a>
+<span class="sourceLineNo">071</span>  private ReferenceService referenceService;<a name="line.71"></a>
+<span class="sourceLineNo">072</span>  @Inject<a name="line.72"></a>
+<span class="sourceLineNo">073</span>  private VernacularNameService vernacularNameService;<a name="line.73"></a>
+<span class="sourceLineNo">074</span><a name="line.74"></a>
+<span class="sourceLineNo">075</span>  // Custom sorting of names current locale, then preferring English, then using the name<a name="line.75"></a>
+<span class="sourceLineNo">076</span>  private final VernacularLocaleComparator vernacularLocaleComparator = new VernacularLocaleComparator(<a name="line.76"></a>
+<span class="sourceLineNo">077</span>    Language.fromIsoCode(getLocale().getISO3Language()));<a name="line.77"></a>
+<span class="sourceLineNo">078</span><a name="line.78"></a>
+<span class="sourceLineNo">079</span>  // Empty collections are created to safeguard against NPE in freemarker templates<a name="line.79"></a>
+<span class="sourceLineNo">080</span>  private final DescriptionToc descriptionToc = new DescriptionToc();<a name="line.80"></a>
+<span class="sourceLineNo">081</span>  private final List&lt;String&gt; habitats = Lists.newArrayList();<a name="line.81"></a>
+<span class="sourceLineNo">082</span>  private final List&lt;NameUsage&gt; related = Lists.newArrayList();<a name="line.82"></a>
+<span class="sourceLineNo">083</span>  private SortedMap&lt;UUID, Integer&gt; occurrenceDatasetCounts = Maps.newTreeMap(); // not final, since replaced<a name="line.83"></a>
+<span class="sourceLineNo">084</span>  private final LinkedHashMap&lt;String, List&lt;VernacularName&gt;&gt; vernacularNames = Maps.newLinkedHashMap();<a name="line.84"></a>
+<span class="sourceLineNo">085</span>  private boolean nubSourceExists = false;<a name="line.85"></a>
+<span class="sourceLineNo">086</span><a name="line.86"></a>
+<span class="sourceLineNo">087</span>  // various page sizes used<a name="line.87"></a>
+<span class="sourceLineNo">088</span>  private final Pageable page1 = new PagingRequest(0, 1);<a name="line.88"></a>
+<span class="sourceLineNo">089</span>  private final Pageable page6 = new PagingRequest(0, 6);<a name="line.89"></a>
+<span class="sourceLineNo">090</span>  private final Pageable page10 = new PagingRequest(0, 10);<a name="line.90"></a>
+<span class="sourceLineNo">091</span>  private final Pageable page15 = new PagingRequest(0, 15);<a name="line.91"></a>
+<span class="sourceLineNo">092</span>  private final Pageable page20 = new PagingRequest(0, 20);<a name="line.92"></a>
+<span class="sourceLineNo">093</span>  private final Pageable page50 = new PagingRequest(0, 50);<a name="line.93"></a>
+<span class="sourceLineNo">094</span>  private final Pageable page100 = new PagingRequest(0, 100);<a name="line.94"></a>
+<span class="sourceLineNo">095</span>  private static final int MAX_COMPONENTS = 10;<a name="line.95"></a>
+<span class="sourceLineNo">096</span><a name="line.96"></a>
+<span class="sourceLineNo">097</span>  private final static Joiner HABITAT_JOINER = Joiner.on(" ");<a name="line.97"></a>
+<span class="sourceLineNo">098</span>  private final static Joiner VERNACULAR_JOINER = Joiner.on("").skipNulls();<a name="line.98"></a>
+<span class="sourceLineNo">099</span><a name="line.99"></a>
+<span class="sourceLineNo">100</span><a name="line.100"></a>
+<span class="sourceLineNo">101</span>  /**<a name="line.101"></a>
+<span class="sourceLineNo">102</span>   * Should flag be present, then the habitat named by the flagName is appended to the habitats.<a name="line.102"></a>
+<span class="sourceLineNo">103</span>   */<a name="line.103"></a>
+<span class="sourceLineNo">104</span>  @VisibleForTesting<a name="line.104"></a>
+<span class="sourceLineNo">105</span>  void appendHabitat(Boolean flag, String flagName) {<a name="line.105"></a>
+<span class="sourceLineNo">106</span>    if (flag != null) {<a name="line.106"></a>
+<span class="sourceLineNo">107</span>      String s = (flag) ?<a name="line.107"></a>
+<span class="sourceLineNo">108</span>        getText(flagName) :<a name="line.108"></a>
+<span class="sourceLineNo">109</span>        HABITAT_JOINER.join(getText("not"), getText(flagName));<a name="line.109"></a>
+<span class="sourceLineNo">110</span>      habitats.add(s);<a name="line.110"></a>
+<span class="sourceLineNo">111</span>    }<a name="line.111"></a>
+<span class="sourceLineNo">112</span>  }<a name="line.112"></a>
+<span class="sourceLineNo">113</span><a name="line.113"></a>
+<span class="sourceLineNo">114</span>  /**<a name="line.114"></a>
+<span class="sourceLineNo">115</span>   * Populates the model objects sequentially.<a name="line.115"></a>
+<span class="sourceLineNo">116</span>   */<a name="line.116"></a>
+<span class="sourceLineNo">117</span>  @Override<a name="line.117"></a>
+<span class="sourceLineNo">118</span>  public String execute() {<a name="line.118"></a>
+<span class="sourceLineNo">119</span>    loadUsage();<a name="line.119"></a>
+<span class="sourceLineNo">120</span>    loadUsageDetails();<a name="line.120"></a>
+<span class="sourceLineNo">121</span>    populateVernacularNames();<a name="line.121"></a>
+<span class="sourceLineNo">122</span>    populateHabitats();<a name="line.122"></a>
+<span class="sourceLineNo">123</span><a name="line.123"></a>
+<span class="sourceLineNo">124</span>    for (NameUsage u : sublist(related, MAX_COMPONENTS)) {<a name="line.124"></a>
+<span class="sourceLineNo">125</span>      loadDataset(u.getDatasetKey());<a name="line.125"></a>
+<span class="sourceLineNo">126</span>    }<a name="line.126"></a>
+<span class="sourceLineNo">127</span>    for (NameUsageComponent c : usage.getExternalLinks()) {<a name="line.127"></a>
+<span class="sourceLineNo">128</span>      loadDataset(c.getDatasetKey());<a name="line.128"></a>
+<span class="sourceLineNo">129</span>    }<a name="line.129"></a>
+<span class="sourceLineNo">130</span>    for (NameUsageComponent c : usage.getDistributions()) {<a name="line.130"></a>
+<span class="sourceLineNo">131</span>      loadDataset(c.getDatasetKey());<a name="line.131"></a>
+<span class="sourceLineNo">132</span>    }<a name="line.132"></a>
+<span class="sourceLineNo">133</span>    for (NameUsageComponent c : usage.getReferences()) {<a name="line.133"></a>
+<span class="sourceLineNo">134</span>      loadDataset(c.getDatasetKey());<a name="line.134"></a>
+<span class="sourceLineNo">135</span>    }<a name="line.135"></a>
+<span class="sourceLineNo">136</span>    for (NameUsageComponent c : usage.getTypeSpecimens()) {<a name="line.136"></a>
+<span class="sourceLineNo">137</span>      loadDataset(c.getDatasetKey());<a name="line.137"></a>
+<span class="sourceLineNo">138</span>    }<a name="line.138"></a>
+<span class="sourceLineNo">139</span>    for (NameUsageComponent c : usage.getVernacularNames()) {<a name="line.139"></a>
+<span class="sourceLineNo">140</span>      loadDataset(c.getDatasetKey());<a name="line.140"></a>
+<span class="sourceLineNo">141</span>    }<a name="line.141"></a>
+<span class="sourceLineNo">142</span>    for (UUID uuid : sublist(Lists.newArrayList(occurrenceDatasetCounts.keySet()), MAX_COMPONENTS)) {<a name="line.142"></a>
+<span class="sourceLineNo">143</span>      loadDataset(uuid);<a name="line.143"></a>
+<span class="sourceLineNo">144</span>    }<a name="line.144"></a>
+<span class="sourceLineNo">145</span><a name="line.145"></a>
+<span class="sourceLineNo">146</span>    return SUCCESS;<a name="line.146"></a>
+<span class="sourceLineNo">147</span>  }<a name="line.147"></a>
+<span class="sourceLineNo">148</span><a name="line.148"></a>
+<span class="sourceLineNo">149</span>  /**<a name="line.149"></a>
+<span class="sourceLineNo">150</span>   * @return the usage representing the basionym or null since only some species have a differing original name<a name="line.150"></a>
+<span class="sourceLineNo">151</span>   */<a name="line.151"></a>
+<span class="sourceLineNo">152</span>  @Nullable<a name="line.152"></a>
+<span class="sourceLineNo">153</span>  public NameUsage getBasionym() {<a name="line.153"></a>
+<span class="sourceLineNo">154</span>    return basionym;<a name="line.154"></a>
+<span class="sourceLineNo">155</span>  }<a name="line.155"></a>
+<span class="sourceLineNo">156</span><a name="line.156"></a>
+<span class="sourceLineNo">157</span>  @NotNull<a name="line.157"></a>
+<span class="sourceLineNo">158</span>  public DescriptionToc getDescriptionToc() {<a name="line.158"></a>
+<span class="sourceLineNo">159</span>    return descriptionToc;<a name="line.159"></a>
+<span class="sourceLineNo">160</span>  }<a name="line.160"></a>
+<span class="sourceLineNo">161</span><a name="line.161"></a>
+<span class="sourceLineNo">162</span>  @NotNull<a name="line.162"></a>
+<span class="sourceLineNo">163</span>  public List&lt;String&gt; getHabitats() {<a name="line.163"></a>
+<span class="sourceLineNo">164</span>    return habitats;<a name="line.164"></a>
+<span class="sourceLineNo">165</span>  }<a name="line.165"></a>
+<span class="sourceLineNo">166</span><a name="line.166"></a>
+<span class="sourceLineNo">167</span>  @NotNull<a name="line.167"></a>
+<span class="sourceLineNo">168</span>  public SortedMap&lt;UUID, Integer&gt; getOccurrenceDatasetCounts() {<a name="line.168"></a>
+<span class="sourceLineNo">169</span>    return occurrenceDatasetCounts;<a name="line.169"></a>
+<span class="sourceLineNo">170</span>  }<a name="line.170"></a>
+<span class="sourceLineNo">171</span><a name="line.171"></a>
+<span class="sourceLineNo">172</span>  /**<a name="line.172"></a>
+<span class="sourceLineNo">173</span>   * Exposed to allow easy access in freemarker.<a name="line.173"></a>
+<span class="sourceLineNo">174</span>   */<a name="line.174"></a>
+<span class="sourceLineNo">175</span>  public List&lt;Rank&gt; getRankEnum() {<a name="line.175"></a>
+<span class="sourceLineNo">176</span>    return Rank.LINNEAN_RANKS;<a name="line.176"></a>
+<span class="sourceLineNo">177</span>  }<a name="line.177"></a>
+<span class="sourceLineNo">178</span><a name="line.178"></a>
+<span class="sourceLineNo">179</span>  @NotNull<a name="line.179"></a>
+<span class="sourceLineNo">180</span>  public List&lt;NameUsage&gt; getRelated() {<a name="line.180"></a>
+<span class="sourceLineNo">181</span>    return related;<a name="line.181"></a>
+<span class="sourceLineNo">182</span>  }<a name="line.182"></a>
+<span class="sourceLineNo">183</span><a name="line.183"></a>
+<span class="sourceLineNo">184</span>  @NotNull<a name="line.184"></a>
+<span class="sourceLineNo">185</span>  public Map&lt;String, String&gt; getResourceBundleProperties() {<a name="line.185"></a>
+<span class="sourceLineNo">186</span>    return getResourceBundleProperties("enum.rank.");<a name="line.186"></a>
+<span class="sourceLineNo">187</span>  }<a name="line.187"></a>
+<span class="sourceLineNo">188</span><a name="line.188"></a>
+<span class="sourceLineNo">189</span>  @NotNull<a name="line.189"></a>
+<span class="sourceLineNo">190</span>  public Map&lt;String, List&lt;VernacularName&gt;&gt; getVernacularNames() {<a name="line.190"></a>
+<span class="sourceLineNo">191</span>    return vernacularNames;<a name="line.191"></a>
+<span class="sourceLineNo">192</span>  }<a name="line.192"></a>
+<span class="sourceLineNo">193</span><a name="line.193"></a>
+<span class="sourceLineNo">194</span>  /**<a name="line.194"></a>
+<span class="sourceLineNo">195</span>   * Performs service calls fleshing out the usage model object.<a name="line.195"></a>
+<span class="sourceLineNo">196</span>   */<a name="line.196"></a>
+<span class="sourceLineNo">197</span>  private void loadUsageDetails() {<a name="line.197"></a>
+<span class="sourceLineNo">198</span>    if (usage.getBasionymKey() != null) {<a name="line.198"></a>
+<span class="sourceLineNo">199</span>      basionym = usageService.get(usage.getBasionymKey(), getLocale());<a name="line.199"></a>
+<span class="sourceLineNo">200</span>    }<a name="line.200"></a>
+<span class="sourceLineNo">201</span>    if (usage.getNubKey() != null) {<a name="line.201"></a>
+<span class="sourceLineNo">202</span>      List&lt;NameUsage&gt; relatedResponse = usageService.listRelated(usage.getNubKey(), getLocale());<a name="line.202"></a>
+<span class="sourceLineNo">203</span>      for (NameUsage u : relatedResponse) {<a name="line.203"></a>
+<span class="sourceLineNo">204</span>        // skip oneself<a name="line.204"></a>
+<span class="sourceLineNo">205</span>        if (!u.getKey().equals(usage.getKey())) {<a name="line.205"></a>
+<span class="sourceLineNo">206</span>          related.add(u);<a name="line.206"></a>
+<span class="sourceLineNo">207</span>        }<a name="line.207"></a>
+<span class="sourceLineNo">208</span>      }<a name="line.208"></a>
+<span class="sourceLineNo">209</span>      occurrenceDatasetCounts = occurrenceDatasetService.occurrenceDatasetsForNubKey(usage.getNubKey());<a name="line.209"></a>
+<span class="sourceLineNo">210</span>    }<a name="line.210"></a>
+<span class="sourceLineNo">211</span>    usage.setSynonyms(usageService.listSynonyms(id, getLocale(), page6).getResults());<a name="line.211"></a>
+<span class="sourceLineNo">212</span>    usage.setVernacularNames(vernacularNameService.listByUsage(id, page100).getResults());<a name="line.212"></a>
+<span class="sourceLineNo">213</span>    usage.setDistributions(distributionService.listByUsage(id, page10).getResults());<a name="line.213"></a>
+<span class="sourceLineNo">214</span>    usage.setImages(imageService.listByUsage(id, page1).getResults()); // first only<a name="line.214"></a>
+<span class="sourceLineNo">215</span>    usage.setTypeSpecimens(typeSpecimenService.listByUsage(id, page10).getResults());<a name="line.215"></a>
+<span class="sourceLineNo">216</span>    TypesAction.removeInvalidTypes(usage.getTypeSpecimens());<a name="line.216"></a>
+<span class="sourceLineNo">217</span>    usage.setSpeciesProfiles(speciesProfileService.listByUsage(id, page20).getResults());<a name="line.217"></a>
+<span class="sourceLineNo">218</span>    for (Description d : descriptionService.listByUsage(id, page50).getResults()) {<a name="line.218"></a>
+<span class="sourceLineNo">219</span>      descriptionToc.addDescription(d);<a name="line.219"></a>
+<span class="sourceLineNo">220</span>    }<a name="line.220"></a>
+<span class="sourceLineNo">221</span><a name="line.221"></a>
+<span class="sourceLineNo">222</span>    final Set&lt;String&gt; seenRefs = Sets.newHashSet();<a name="line.222"></a>
+<span class="sourceLineNo">223</span>    usage.setReferences(FluentIterable.from(referenceService.listByUsage(id, page15).getResults())<a name="line.223"></a>
+<span class="sourceLineNo">224</span>      .filter(new Predicate&lt;Reference&gt;() {<a name="line.224"></a>
+<span class="sourceLineNo">225</span>        public boolean apply(@Nullable Reference r) {<a name="line.225"></a>
+<span class="sourceLineNo">226</span>          if (r == null) return false;<a name="line.226"></a>
+<span class="sourceLineNo">227</span>          // deduplicate references only for nub species<a name="line.227"></a>
+<span class="sourceLineNo">228</span>          if (usage.isNub() &amp;&amp; seenRefs.contains(r.getCitation())) {<a name="line.228"></a>
+<span class="sourceLineNo">229</span>            return false;<a name="line.229"></a>
+<span class="sourceLineNo">230</span>          }<a name="line.230"></a>
+<span class="sourceLineNo">231</span>          seenRefs.add(r.getCitation());<a name="line.231"></a>
+<span class="sourceLineNo">232</span>          return true;<a name="line.232"></a>
+<span class="sourceLineNo">233</span>        }<a name="line.233"></a>
+<span class="sourceLineNo">234</span>      })<a name="line.234"></a>
+<span class="sourceLineNo">235</span>      .toSortedList(Ordering.natural().onResultOf(new Function&lt;Reference, String&gt;() {<a name="line.235"></a>
+<span class="sourceLineNo">236</span>        @Override<a name="line.236"></a>
+<span class="sourceLineNo">237</span>        public String apply(@Nullable Reference r) {<a name="line.237"></a>
+<span class="sourceLineNo">238</span>          return r == null ? null : r.getCitation();<a name="line.238"></a>
+<span class="sourceLineNo">239</span>        }<a name="line.239"></a>
+<span class="sourceLineNo">240</span>      }))<a name="line.240"></a>
+<span class="sourceLineNo">241</span>    );<a name="line.241"></a>
+<span class="sourceLineNo">242</span><a name="line.242"></a>
+<span class="sourceLineNo">243</span>    if (Origin.SOURCE == usage.getOrigin()) {<a name="line.243"></a>
+<span class="sourceLineNo">244</span>      verbatimExists = usageService.getVerbatim(id) != null;<a name="line.244"></a>
+<span class="sourceLineNo">245</span>    }<a name="line.245"></a>
+<span class="sourceLineNo">246</span><a name="line.246"></a>
+<span class="sourceLineNo">247</span>    if (usage.isNub() &amp;&amp; usage.getSourceKey() != null) {<a name="line.247"></a>
+<span class="sourceLineNo">248</span>      // check if the source record actually exists<a name="line.248"></a>
+<span class="sourceLineNo">249</span>      nubSourceExists = usageService.get(usage.getSourceKey(), null) != null;<a name="line.249"></a>
+<span class="sourceLineNo">250</span>    }<a name="line.250"></a>
+<span class="sourceLineNo">251</span>  }<a name="line.251"></a>
+<span class="sourceLineNo">252</span><a name="line.252"></a>
+<span class="sourceLineNo">253</span>  /**<a name="line.253"></a>
+<span class="sourceLineNo">254</span>   * Populates the habitats first using the boolean flags associated with the usage, and then appending any others.<a name="line.254"></a>
+<span class="sourceLineNo">255</span>   */<a name="line.255"></a>
+<span class="sourceLineNo">256</span>  private void populateHabitats() {<a name="line.256"></a>
+<span class="sourceLineNo">257</span>    appendHabitat(usage.isTerrestrial(), "enum.habitat.terrestrial");<a name="line.257"></a>
+<span class="sourceLineNo">258</span>    appendHabitat(usage.isMarine(), "enum.habitat.marine");<a name="line.258"></a>
+<span class="sourceLineNo">259</span>    appendHabitat(usage.isFreshwater(), "enum.habitat.freshwater");<a name="line.259"></a>
+<span class="sourceLineNo">260</span>    for (String h : usage.getHabitats()) {<a name="line.260"></a>
+<span class="sourceLineNo">261</span>      habitats.add(h);<a name="line.261"></a>
+<span class="sourceLineNo">262</span>    }<a name="line.262"></a>
+<span class="sourceLineNo">263</span>  }<a name="line.263"></a>
+<span class="sourceLineNo">264</span><a name="line.264"></a>
+<span class="sourceLineNo">265</span>  /**<a name="line.265"></a>
+<span class="sourceLineNo">266</span>   * Populates the index of vernacular names.<a name="line.266"></a>
+<span class="sourceLineNo">267</span>   * This is a sorted map keyed on the name + language(optional) and order by name and by the rules imposed by<a name="line.267"></a>
+<span class="sourceLineNo">268</span>   * {@link #vernacularLocaleComparator}<a name="line.268"></a>
+<span class="sourceLineNo">269</span>   */<a name="line.269"></a>
+<span class="sourceLineNo">270</span>  @VisibleForTesting<a name="line.270"></a>
+<span class="sourceLineNo">271</span>  void populateVernacularNames() {<a name="line.271"></a>
+<span class="sourceLineNo">272</span>    List&lt;VernacularName&gt; source = usage.getVernacularNames();<a name="line.272"></a>
+<span class="sourceLineNo">273</span>    vernacularNames.clear();<a name="line.273"></a>
+<span class="sourceLineNo">274</span>    // total ordering of the names, which is then respected in the sorted map<a name="line.274"></a>
+<span class="sourceLineNo">275</span>    for (VernacularName name : Ordering.from(vernacularLocaleComparator).immutableSortedCopy(source)) {<a name="line.275"></a>
+<span class="sourceLineNo">276</span><a name="line.276"></a>
+<span class="sourceLineNo">277</span>      // skip those that can't be displayed<a name="line.277"></a>
+<span class="sourceLineNo">278</span>      if (Strings.isNullOrEmpty(name.getVernacularName())) {<a name="line.278"></a>
+<span class="sourceLineNo">279</span>        continue;<a name="line.279"></a>
+<span class="sourceLineNo">280</span>      }<a name="line.280"></a>
+<span class="sourceLineNo">281</span><a name="line.281"></a>
+<span class="sourceLineNo">282</span>      // The names are keyed using name||language where language might be null<a name="line.282"></a>
+<span class="sourceLineNo">283</span>      String languageCode = (name.getLanguage() == null) ? null : name.getLanguage().getIso2LetterCode();<a name="line.283"></a>
+<span class="sourceLineNo">284</span>      String key = VERNACULAR_JOINER<a name="line.284"></a>
+<span class="sourceLineNo">285</span>        .join(<a name="line.285"></a>
+<span class="sourceLineNo">286</span>          name.getVernacularName().toLowerCase(),<a name="line.286"></a>
+<span class="sourceLineNo">287</span>          "||",<a name="line.287"></a>
+<span class="sourceLineNo">288</span>          languageCode);<a name="line.288"></a>
+<span class="sourceLineNo">289</span><a name="line.289"></a>
+<span class="sourceLineNo">290</span>      // Add to our map index<a name="line.290"></a>
+<span class="sourceLineNo">291</span>      List&lt;VernacularName&gt; values = vernacularNames.get(key);<a name="line.291"></a>
+<span class="sourceLineNo">292</span>      if (values == null) {<a name="line.292"></a>
+<span class="sourceLineNo">293</span>        values = Lists.newArrayList();<a name="line.293"></a>
+<span class="sourceLineNo">294</span>        vernacularNames.put(key, values);<a name="line.294"></a>
+<span class="sourceLineNo">295</span>      }<a name="line.295"></a>
+<span class="sourceLineNo">296</span>      values.add(name);<a name="line.296"></a>
+<span class="sourceLineNo">297</span>    }<a name="line.297"></a>
+<span class="sourceLineNo">298</span>  }<a name="line.298"></a>
+<span class="sourceLineNo">299</span><a name="line.299"></a>
+<span class="sourceLineNo">300</span>  public boolean isVerbatimExists() {<a name="line.300"></a>
+<span class="sourceLineNo">301</span>    return verbatimExists;<a name="line.301"></a>
+<span class="sourceLineNo">302</span>  }<a name="line.302"></a>
+<span class="sourceLineNo">303</span><a name="line.303"></a>
+<span class="sourceLineNo">304</span>  public boolean isNubSourceExists() {<a name="line.304"></a>
+<span class="sourceLineNo">305</span>    return nubSourceExists;<a name="line.305"></a>
+<span class="sourceLineNo">306</span>  }<a name="line.306"></a>
+<span class="sourceLineNo">307</span>}<a name="line.307"></a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+</div>
+</body>
+</html>
