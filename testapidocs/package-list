@@ -1,9 +1,0 @@
-org.gbif.portal
-org.gbif.portal.action
-org.gbif.portal.action.dataset
-org.gbif.portal.action.occurrence
-org.gbif.portal.action.occurrence.util
-org.gbif.portal.action.species
-org.gbif.portal.config
-org.gbif.portal.model
-org.gbif.portal.selenium
